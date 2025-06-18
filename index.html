@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tooling Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      background-color: #012204;
+      color: #bac4bc;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.8em;
+      color: #ffffff;
+    }
+    #updateTime {
+      font-size: 0.9em;
+      color: #f8f8f8;
+    }
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+    }
+    .card {
+      background-color: #0a1b10;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid #13a30e;
+      text-align: center;
+    }
+    .card h3 {
+      background-color: #057e05;
+      color: #e5ece6;
+      padding: 6px;
+      border-radius: 6px;
+      margin: 0 0 10px;
+    }
+    .tools {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .tool {
+      background: #013a01;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #0ca826;
+    }
+    .tool-title {
+      font-size: 13px;
+      color: #9eb8a2;
+      margin-bottom: 4px;
+    }
+    .chart-wrapper, .small-chart-wrapper {
+      position: relative;
+      margin: auto;
+    }
+    .chart-wrapper {
+      width: 100px;
+      height: 100px;
+    }
+    .small-chart-wrapper {
+      width: 60px;
+      height: 60px;
+    }
+    .chart-label {
+      position: absolute;
+      font-size: 13px;
+      font-weight: bold;
+      color: #ffffff;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TOOLING LIFE CONTROL</h1>
+    <div id="updateTime">อัปเดตเมื่อ ...</div>
+  </header>
+
+  <div class="dashboard" id="dashboard"></div>
+
+  <script>
+    const sheetUrl = 'https://docs.google.com/spreadsheets/d/18kEYBNjeBspEga3GuAllh2K_efaIJjDL-N-MWBPvkyU/gviz/tq?tqx=out:json';
+    const CLEAN_TARGET_MACHINE = 2000000;
+    const CLEAN_TARGET_TOOLS = 5000000;
+
+    function convertSerialToDate(serial) {
+      const baseDate = new Date(Date.UTC(1899, 11, 30));
+      baseDate.setUTCDate(baseDate.getUTCDate() + Math.floor(serial));
+      return baseDate.toLocaleDateString('th-TH', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    }
+
+    function createChart(id, val, max) {
+      new Chart(document.getElementById(id), {
+        type: 'doughnut',
+        data: {
+          datasets: [{
+            data: [val, Math.max(0, max - val)],
+            backgroundColor: ['#0f830f', '#ffffff']
+          }]
+        },
+        options: {
+          cutout: '70%',
+          plugins: {
+            tooltip: { enabled: false },
+            legend: { display: false }
+          }
+        }
+      });
+    }
+
+    fetch(sheetUrl)
+      .then(r => r.text())
+      .then(t => {
+        const json = JSON.parse(t.substr(47).slice(0, -2));
+        const rows = json.table.rows;
+        document.getElementById('updateTime').innerText = 'อัปเดตเมื่อ ' + new Date().toLocaleString('th-TH');
+        const dash = document.getElementById('dashboard');
+
+        rows.forEach((row, idx) => {
+          const c = row.c;
+          if (!c[0] || !c[0].v) return;
+
+          const name = c[0].v;
+          const cs = c[1]?.v || 0;
+          const sp = c[2]?.v || 0;
+
+          let lc = c[3]?.v;
+          let ld1 = c[8]?.v;
+          let ld2 = c[9]?.v;
+          let ld3 = c[10]?.v;
+          let ltms = c[11]?.v;
+
+          lc = typeof lc === 'number' ? convertSerialToDate(lc) : (lc || '-');
+          ld1 = typeof ld1 === 'number' ? convertSerialToDate(ld1) : (ld1 || '-');
+          ld2 = typeof ld2 === 'number' ? convertSerialToDate(ld2) : (ld2 || '-');
+          ld3 = typeof ld3 === 'number' ? convertSerialToDate(ld3) : (ld3 || '-');
+          ltms = typeof ltms === 'number' ? convertSerialToDate(ltms) : (ltms || '-');
+
+          const d1 = c[4]?.v || 0;
+          const d2 = c[5]?.v || 0;
+          const d3 = c[6]?.v || 0;
+          const tms = c[7]?.v || 0;
+
+          const percent = ((cs / CLEAN_TARGET_MACHINE) * 100).toFixed(1);
+
+          const div = document.createElement('div');
+          div.className = 'card';
+          div.innerHTML = `
+            <h3>${name}</h3>
+            <p>Speed: ${sp} SPM</p>
+            <p>Current Stroke: ${Number(cs).toLocaleString()}</p>
+            <p>Target: ${CLEAN_TARGET_MACHINE.toLocaleString()} Stroke</p>
+            <p>Last Cleaned: ${lc}</p>
+            <div class="chart-wrapper">
+              <canvas id="main-${idx}"></canvas>
+              <div class="chart-label">${percent}%</div>
+            </div>
+            <div class="tools">
+              <div class="tool">
+                <div class="tool-title">มีดเจาะ</div>
+                <div class="small-chart-wrapper">
+                  <canvas id="d1-${idx}"></canvas>
+                  <div class="chart-label">${((d1 / CLEAN_TARGET_TOOLS) * 100).toFixed(1)}%</div>
+                </div>
+                <p>${Number(d1).toLocaleString()}</p>
+                <p>Last: ${ld1}</p>
+              </div>
+              <div class="tool">
+                <div class="tool-title">มีดซอยแถว</div>
+                <div class="small-chart-wrapper">
+                  <canvas id="d2-${idx}"></canvas>
+                  <div class="chart-label">${((d2 / CLEAN_TARGET_TOOLS) * 100).toFixed(1)}%</div>
+                </div>
+                <p>${Number(d2).toLocaleString()}</p>
+                <p>Last: ${ld2}</p>
+              </div>
+              <div class="tool">
+                <div class="tool-title">มีดข้าง</div>
+                <div class="small-chart-wrapper">
+                  <canvas id="d3-${idx}"></canvas>
+                  <div class="chart-label">${((d3 / CLEAN_TARGET_TOOLS) * 100).toFixed(1)}%</div>
+                </div>
+                <p>${Number(d3).toLocaleString()}</p>
+                <p>Last: ${ld3}</p>
+              </div>
+              <div class="tool">
+                <div class="tool-title">มีดหน้า</div>
+                <div class="small-chart-wrapper">
+                  <canvas id="tms-${idx}"></canvas>
+                  <div class="chart-label">${((tms / CLEAN_TARGET_TOOLS) * 100).toFixed(1)}%</div>
+                </div>
+                <p>${Number(tms).toLocaleString()}</p>
+                <p>Last: ${ltms}</p>
+              </div>
+            </div>
+          `;
+          dash.appendChild(div);
+
+          createChart(`main-${idx}`, cs, CLEAN_TARGET_MACHINE);
+          createChart(`d1-${idx}`, d1, CLEAN_TARGET_TOOLS);
+          createChart(`d2-${idx}`, d2, CLEAN_TARGET_TOOLS);
+          createChart(`d3-${idx}`, d3, CLEAN_TARGET_TOOLS);
+          createChart(`tms-${idx}`, tms, CLEAN_TARGET_TOOLS);
+        });
+      });
+  </script>
+</body>
+</html>
+
